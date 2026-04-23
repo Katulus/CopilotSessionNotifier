@@ -10,12 +10,10 @@ public class SessionStateTracker
     private bool _initialScanComplete;
     private readonly object _lock = new();
     private readonly HashSet<string> _notifiedEventIds = new();
-    
-    // Debounce: pending turn_end notifications wait before firing
-    private readonly Dictionary<string, System.Threading.Timer> _pendingTurnEndTimers = new();
-    private readonly Dictionary<string, (NotificationItem item, string eventId)> _pendingTurnEndData = new();
-    private const int TurnEndDebounceMs = 5000;
-    
+
+    // Track previous event type per session for deterministic idle detection
+    private readonly Dictionary<string, string> _lastEventType = new();
+
     // Suppress turn_end after task_complete (they always come as a pair)
     private readonly HashSet<string> _suppressNextTurnEnd = new();
 
@@ -90,7 +88,6 @@ public class SessionStateTracker
         {
             using var fs = new FileStream(eventsFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
 
-            // Handle file truncation/recreation
             if (fs.Length < session.LastReadPosition)
                 session.LastReadPosition = 0;
 
@@ -102,10 +99,9 @@ public class SessionStateTracker
             var bytesRead = fs.Read(buffer, 0, buffer.Length);
             var text = System.Text.Encoding.UTF8.GetString(buffer, 0, bytesRead);
 
-            // Only process complete lines (up to last newline)
             var lastNewline = text.LastIndexOf('\n');
             if (lastNewline < 0)
-                return; // No complete lines yet
+                return;
 
             var completeText = text[..(lastNewline + 1)];
             session.LastReadPosition += System.Text.Encoding.UTF8.GetByteCount(completeText);
@@ -115,116 +111,59 @@ public class SessionStateTracker
                 var evt = EventParser.ParseLine(line);
                 if (evt == null) continue;
 
+                // Get previous event type BEFORE updating
+                _lastEventType.TryGetValue(session.Id, out var prevEventType);
+                _lastEventType[session.Id] = evt.Type;
+
                 UpdateSessionFromEvent(session, evt, sessionDir);
 
                 if (!_initialScanComplete)
                     continue;
-
-                // If we see a turn_start, cancel any pending turn_end notification for this session
-                if (evt.Type == "assistant.turn_start")
-                {
-                    CancelPendingTurnEnd(session.Id);
-                    continue;
-                }
 
                 if (EventParser.IsNotificationWorthy(evt.Type))
                 {
                     var notifType = EventParser.GetNotificationType(evt.Type);
                     if (notifType.HasValue && _notifiedEventIds.Add(evt.Id))
                     {
-                        // Suppress turn_end that immediately follows task_complete
-                        if (evt.Type == "assistant.turn_end" && _suppressNextTurnEnd.Remove(session.Id))
+                        if (evt.Type == "assistant.turn_end")
                         {
-                            _notifiedEventIds.Remove(evt.Id);
-                            continue;
+                            // Suppress turn_end after task_complete
+                            if (_suppressNextTurnEnd.Remove(session.Id))
+                            {
+                                _notifiedEventIds.Remove(evt.Id);
+                                continue;
+                            }
+
+                            // Only notify if the previous event was assistant.message
+                            // (assistant finished with text = truly waiting for user input)
+                            // If previous was tool.execution_complete, another turn starts immediately
+                            if (prevEventType != "assistant.message")
+                            {
+                                _notifiedEventIds.Remove(evt.Id);
+                                continue;
+                            }
                         }
 
-                        // Mark that the next turn_end for this session should be suppressed
                         if (evt.Type == "session.task_complete")
                         {
                             _suppressNextTurnEnd.Add(session.Id);
                         }
+
                         session.LastNotifiedEventId = evt.Id;
                         UpdateSessionMetadata(session, sessionDir);
 
-                        var item = new NotificationItem(
+                        NotificationReady?.Invoke(new NotificationItem(
                             session.Id,
                             session.DisplayName,
                             notifType.Value,
                             evt.Timestamp,
                             session.Pid
-                        );
-
-                        if (evt.Type == "assistant.turn_end")
-                        {
-                            // Debounce: wait before notifying, cancel if turn_start follows
-                            SchedulePendingTurnEnd(session.Id, item, evt.Id);
-                        }
-                        else
-                        {
-                            // Immediate notification for shutdown, task_complete
-                            NotificationReady?.Invoke(item);
-                        }
+                        ));
                     }
                 }
             }
         }
-        catch (IOException)
-        {
-            // File is being written to, will retry on next poll
-        }
-    }
-
-    private void SchedulePendingTurnEnd(string sessionId, NotificationItem item, string eventId)
-    {
-        // Cancel any existing pending notification for this session
-        CancelPendingTurnEnd(sessionId);
-
-        _pendingTurnEndData[sessionId] = (item, eventId);
-        _pendingTurnEndTimers[sessionId] = new System.Threading.Timer(
-            _ => FirePendingTurnEnd(sessionId),
-            null,
-            TurnEndDebounceMs,
-            System.Threading.Timeout.Infinite
-        );
-    }
-
-    private void CancelPendingTurnEnd(string sessionId)
-    {
-        if (_pendingTurnEndTimers.TryGetValue(sessionId, out var timer))
-        {
-            timer.Dispose();
-            _pendingTurnEndTimers.Remove(sessionId);
-        }
-        if (_pendingTurnEndData.TryGetValue(sessionId, out var data))
-        {
-            // Remove the event ID from notified set so it doesn't block future dedup
-            _notifiedEventIds.Remove(data.eventId);
-            _pendingTurnEndData.Remove(sessionId);
-        }
-    }
-
-    private void FirePendingTurnEnd(string sessionId)
-    {
-        NotificationItem? item = null;
-        lock (_lock)
-        {
-            if (_pendingTurnEndData.TryGetValue(sessionId, out var data))
-            {
-                item = data.item;
-                _pendingTurnEndData.Remove(sessionId);
-            }
-            if (_pendingTurnEndTimers.TryGetValue(sessionId, out var timer))
-            {
-                timer.Dispose();
-                _pendingTurnEndTimers.Remove(sessionId);
-            }
-        }
-
-        if (item != null)
-        {
-            NotificationReady?.Invoke(item);
-        }
+        catch (IOException) { }
     }
 
     private void UpdateSessionFromEvent(SessionInfo session, SessionEvent evt, string sessionDir)
@@ -241,15 +180,12 @@ public class SessionStateTracker
                 break;
             case "session.shutdown":
                 session.IsShutdown = true;
-                // Cancel any pending turn_end when session shuts down
-                CancelPendingTurnEnd(session.Id);
                 break;
         }
     }
 
     private void UpdateSessionMetadata(SessionInfo session, string sessionDir)
     {
-        // Read workspace.yaml
         var workspaceFile = Path.Combine(sessionDir, "workspace.yaml");
         if (File.Exists(workspaceFile))
         {
@@ -275,7 +211,6 @@ public class SessionStateTracker
             catch (IOException) { }
         }
 
-        // Read lock file for PID — only set if process is actually alive
         try
         {
             var lockFiles = Directory.GetFiles(sessionDir, "inuse.*.lock");
@@ -292,7 +227,6 @@ public class SessionStateTracker
                     }
                     catch (ArgumentException)
                     {
-                        // Process is dead — stale lock file
                         session.Pid = null;
                     }
                 }
