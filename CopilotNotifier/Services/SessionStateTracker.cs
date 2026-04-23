@@ -15,6 +15,9 @@ public class SessionStateTracker
     private readonly Dictionary<string, System.Threading.Timer> _pendingTurnEndTimers = new();
     private readonly Dictionary<string, (NotificationItem item, string eventId)> _pendingTurnEndData = new();
     private const int TurnEndDebounceMs = 5000;
+    
+    // Suppress turn_end after task_complete (they always come as a pair)
+    private readonly HashSet<string> _suppressNextTurnEnd = new();
 
     public SessionStateTracker(string sessionStatePath)
     {
@@ -129,6 +132,18 @@ public class SessionStateTracker
                     var notifType = EventParser.GetNotificationType(evt.Type);
                     if (notifType.HasValue && _notifiedEventIds.Add(evt.Id))
                     {
+                        // Suppress turn_end that immediately follows task_complete
+                        if (evt.Type == "assistant.turn_end" && _suppressNextTurnEnd.Remove(session.Id))
+                        {
+                            _notifiedEventIds.Remove(evt.Id);
+                            continue;
+                        }
+
+                        // Mark that the next turn_end for this session should be suppressed
+                        if (evt.Type == "session.task_complete")
+                        {
+                            _suppressNextTurnEnd.Add(session.Id);
+                        }
                         session.LastNotifiedEventId = evt.Id;
                         UpdateSessionMetadata(session, sessionDir);
 
