@@ -55,6 +55,8 @@ public static class EventParser
         if (el.TryGetProperty("cwd", out var cw)) cwd = cw.GetString();
         if (el.TryGetProperty("newMode", out var nm)) newMode = nm.GetString();
         if (el.TryGetProperty("previousMode", out var pm)) previousMode = pm.GetString();
+        string? toolName = null;
+        if (el.TryGetProperty("toolName", out var tn)) toolName = tn.GetString();
         if (el.TryGetProperty("context", out var ctx))
         {
             string? ctxCwd = null;
@@ -62,7 +64,7 @@ public static class EventParser
             context = new SessionResumeContext(ctxCwd);
         }
 
-        return new SessionEventData(shutdownType, turnId, summary, cwd, newMode, previousMode, context);
+        return new SessionEventData(shutdownType, turnId, summary, cwd, newMode, previousMode, context, toolName);
     }
 
     public static bool IsNotificationWorthy(string eventType) =>

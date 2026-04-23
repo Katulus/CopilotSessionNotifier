@@ -120,6 +120,24 @@ public class SessionStateTracker
                 if (!_initialScanComplete)
                     continue;
 
+                // Detect ask_user tool as "waiting for input"
+                if (evt.Type == "tool.execution_start" &&
+                    evt.Data?.ToolName == "ask_user" &&
+                    _notifiedEventIds.Add(evt.Id))
+                {
+                    session.LastNotifiedEventId = evt.Id;
+                    UpdateSessionMetadata(session, sessionDir);
+
+                    NotificationReady?.Invoke(new NotificationItem(
+                        session.Id,
+                        session.DisplayName,
+                        NotificationType.WaitingForInput,
+                        evt.Timestamp,
+                        session.Pid
+                    ));
+                    continue;
+                }
+
                 if (EventParser.IsNotificationWorthy(evt.Type))
                 {
                     var notifType = EventParser.GetNotificationType(evt.Type);
