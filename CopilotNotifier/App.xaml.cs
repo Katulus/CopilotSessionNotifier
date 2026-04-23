@@ -62,7 +62,7 @@ public partial class App : System.Windows.Application
 
         var menu = new WinForms.ContextMenuStrip();
 
-        var activeSessionsMenu = new WinForms.ToolStripMenuItem("Active Sessions");
+        var activeSessionsMenu = new WinForms.ToolStripMenuItem("Sessions");
         activeSessionsMenu.DropDownOpening += (_, _) => RefreshActiveSessionsMenu(activeSessionsMenu);
         menu.Items.Add(activeSessionsMenu);
 
@@ -92,20 +92,36 @@ public partial class App : System.Windows.Application
 
         if (_tracker == null) return;
 
-        var activeSessions = _tracker.Sessions.Values
+        var sessions = _tracker.Sessions.Values
             .Where(s => !s.IsShutdown)
-            .OrderByDescending(s => s.LastEventTime)
-            .Take(20);
+            .OrderByDescending(s => s.Pid.HasValue) // active (has PID) first
+            .ThenByDescending(s => s.LastEventTime)
+            .Take(30)
+            .ToList();
 
-        var any = false;
-        foreach (var session in activeSessions)
+        bool addedActive = false;
+        bool addedInactive = false;
+
+        foreach (var session in sessions)
         {
-            any = true;
-            var item = new WinForms.ToolStripMenuItem(session.DisplayName);
             var pid = session.Pid;
             var name = session.DisplayName;
+
+            if (pid.HasValue && !addedActive)
+            {
+                addedActive = true;
+            }
+            else if (!pid.HasValue && !addedInactive)
+            {
+                if (addedActive)
+                    menu.DropDownItems.Add(new WinForms.ToolStripSeparator());
+                addedInactive = true;
+            }
+
+            var item = new WinForms.ToolStripMenuItem(name);
             if (pid.HasValue)
             {
+                item.Font = new System.Drawing.Font(item.Font, System.Drawing.FontStyle.Bold);
                 item.Click += (_, _) => WindowFocusService.FocusTerminalWindow(pid.Value, name);
             }
             else
@@ -116,10 +132,9 @@ public partial class App : System.Windows.Application
             menu.DropDownItems.Add(item);
         }
 
-        if (!any)
+        if (sessions.Count == 0)
         {
-            var emptyItem = new WinForms.ToolStripMenuItem("No active sessions") { Enabled = false };
-            menu.DropDownItems.Add(emptyItem);
+            menu.DropDownItems.Add(new WinForms.ToolStripMenuItem("No sessions") { Enabled = false });
         }
     }
 
