@@ -30,7 +30,7 @@ public static class WindowFocusService
 
     private const int SW_RESTORE = 9;
 
-    public static bool FocusTerminalWindow(int pid)
+    public static bool FocusTerminalWindow(int pid, string? sessionName = null)
     {
         try
         {
@@ -43,9 +43,9 @@ public static class WindowFocusService
             BringWindowToFront(windowHandle);
 
             // If we found a Windows Terminal, try to switch to the correct tab
-            if (wtPid > 0 && shellPid > 0)
+            if (wtPid > 0)
             {
-                TrySwitchToTab(windowHandle, wtPid, shellPid);
+                TrySwitchToTab(windowHandle, sessionName, wtPid, shellPid);
             }
 
             return true;
@@ -93,43 +93,88 @@ public static class WindowFocusService
     }
 
     /// <summary>
-    /// Attempts to switch to the correct tab in Windows Terminal using UI Automation.
-    /// shellPid is the direct child of WT that roots the process tree containing our target.
+    /// Attempts to switch to the correct tab in Windows Terminal.
+    /// Primary strategy: match tab name against session name.
+    /// Fallback: match via process tree ancestry.
     /// </summary>
-    private static void TrySwitchToTab(IntPtr wtHandle, int wtPid, int shellPid)
+    private static void TrySwitchToTab(IntPtr wtHandle, string? sessionName, int wtPid, int shellPid)
     {
         try
         {
             var wtElement = AutomationElement.FromHandle(wtHandle);
             if (wtElement == null) return;
 
-            // Find tab items — WT uses a TabItem control type for each tab
             var tabItems = wtElement.FindAll(TreeScope.Descendants,
                 new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.TabItem));
 
             if (tabItems.Count <= 1)
-                return; // Single tab, already focused
+                return;
 
-            // Get direct children of WT — each tab has one direct shell child
-            var directChildren = GetDirectChildPids(wtPid);
-            if (directChildren.Count != tabItems.Count)
-                return; // Can't reliably match tabs to processes
-
-            // Find which direct child's subtree contains our shellPid
-            for (int i = 0; i < directChildren.Count; i++)
+            // Strategy 1: Match by tab name containing session name
+            if (!string.IsNullOrWhiteSpace(sessionName))
             {
-                if (directChildren[i] == shellPid || IsDescendantOf(shellPid, directChildren[i]))
+                foreach (AutomationElement tab in tabItems)
                 {
-                    try
+                    var tabName = tab.Current.Name ?? "";
+                    if (tabName.Contains(sessionName, StringComparison.OrdinalIgnoreCase)
+                        || sessionName.Contains(tabName, StringComparison.OrdinalIgnoreCase))
                     {
-                        var pattern = tabItems[i].GetCurrentPattern(SelectionItemPattern.Pattern)
-                            as SelectionItemPattern;
-                        pattern?.Select();
+                        SelectTab(tab);
+                        return;
                     }
-                    catch { }
-                    return;
+                }
+
+                // Try partial match: first 40 chars of either
+                var shortSession = sessionName.Length > 40 ? sessionName[..40] : sessionName;
+                foreach (AutomationElement tab in tabItems)
+                {
+                    var tabName = tab.Current.Name ?? "";
+                    var shortTab = tabName.Length > 40 ? tabName[..40] : tabName;
+                    if (shortTab.Contains(shortSession, StringComparison.OrdinalIgnoreCase)
+                        || shortSession.Contains(shortTab, StringComparison.OrdinalIgnoreCase))
+                    {
+                        SelectTab(tab);
+                        return;
+                    }
                 }
             }
+
+            // Strategy 2: Match via process tree — find which shell child of WT
+            // is an ancestor of our target process
+            if (shellPid > 0)
+            {
+                var shellPids = GetDirectChildPids(wtPid)
+                    .Where(pid =>
+                    {
+                        try
+                        {
+                            var p = Process.GetProcessById(pid);
+                            var name = p.ProcessName.ToLowerInvariant();
+                            return name is "pwsh" or "powershell" or "cmd" or "bash" or "wsl" or "zsh";
+                        }
+                        catch { return false; }
+                    })
+                    .ToList();
+
+                for (int i = 0; i < shellPids.Count && i < tabItems.Count; i++)
+                {
+                    if (shellPids[i] == shellPid || IsDescendantOf(shellPid, shellPids[i]))
+                    {
+                        SelectTab(tabItems[i]);
+                        return;
+                    }
+                }
+            }
+        }
+        catch { }
+    }
+
+    private static void SelectTab(AutomationElement tab)
+    {
+        try
+        {
+            var pattern = tab.GetCurrentPattern(SelectionItemPattern.Pattern) as SelectionItemPattern;
+            pattern?.Select();
         }
         catch { }
     }

@@ -45,7 +45,7 @@ public partial class NotificationPopup : Window
     {
         if (_item.Pid.HasValue)
         {
-            WindowFocusService.FocusTerminalWindow(_item.Pid.Value);
+            WindowFocusService.FocusTerminalWindow(_item.Pid.Value, _item.DisplayName);
         }
         AnimateClose();
     }

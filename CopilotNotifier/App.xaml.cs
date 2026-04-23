@@ -103,9 +103,10 @@ public partial class App : System.Windows.Application
             any = true;
             var item = new WinForms.ToolStripMenuItem(session.DisplayName);
             var pid = session.Pid;
+            var name = session.DisplayName;
             if (pid.HasValue)
             {
-                item.Click += (_, _) => WindowFocusService.FocusTerminalWindow(pid.Value);
+                item.Click += (_, _) => WindowFocusService.FocusTerminalWindow(pid.Value, name);
             }
             else
             {
