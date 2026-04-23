@@ -5,7 +5,7 @@
         Width="400" Height="350"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
-        Background="#1E1E1E">
+        Background="{DynamicResource SettingsBackground}">
     <Grid Margin="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -23,33 +23,33 @@
         <!-- Header -->
         <TextBlock Grid.Row="0"
                    Text="⚙ Settings"
-                   Foreground="White"
+                   Foreground="{DynamicResource SettingsHeaderForeground}"
                    FontSize="18"
                    FontWeight="SemiBold"/>
 
         <!-- Notifications section -->
-        <TextBlock Grid.Row="2" Text="Notifications" Foreground="#AAAAAA" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,8"/>
+        <TextBlock Grid.Row="2" Text="Notifications" Foreground="{DynamicResource SettingsSectionForeground}" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,8"/>
 
         <StackPanel Grid.Row="3" Margin="0,0,0,4">
-            <CheckBox x:Name="ChkWaitingInput" Content="Notify on waiting for input" Foreground="White" Margin="0,4"/>
-            <CheckBox x:Name="ChkSessionComplete" Content="Notify on session complete" Foreground="White" Margin="0,4"/>
-            <CheckBox x:Name="ChkTaskComplete" Content="Notify on task complete" Foreground="White" Margin="0,4"/>
-            <CheckBox x:Name="ChkPlaySound" Content="Play notification sound" Foreground="White" Margin="0,4"/>
+            <CheckBox x:Name="ChkWaitingInput" Content="Notify on waiting for input" Foreground="{DynamicResource SettingsTextForeground}" Margin="0,4"/>
+            <CheckBox x:Name="ChkSessionComplete" Content="Notify on session complete" Foreground="{DynamicResource SettingsTextForeground}" Margin="0,4"/>
+            <CheckBox x:Name="ChkTaskComplete" Content="Notify on task complete" Foreground="{DynamicResource SettingsTextForeground}" Margin="0,4"/>
+            <CheckBox x:Name="ChkPlaySound" Content="Play notification sound" Foreground="{DynamicResource SettingsTextForeground}" Margin="0,4"/>
         </StackPanel>
 
         <!-- Startup section -->
-        <TextBlock Grid.Row="6" Text="Startup" Foreground="#AAAAAA" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,8"/>
+        <TextBlock Grid.Row="6" Text="Startup" Foreground="{DynamicResource SettingsSectionForeground}" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,8"/>
 
         <StackPanel Grid.Row="7">
-            <CheckBox x:Name="ChkAutoStart" Content="Start with Windows" Foreground="White" Margin="0,4"/>
+            <CheckBox x:Name="ChkAutoStart" Content="Start with Windows" Foreground="{DynamicResource SettingsTextForeground}" Margin="0,4"/>
         </StackPanel>
 
         <!-- Buttons -->
         <StackPanel Grid.Row="9" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Content="Save" Width="80" Margin="0,0,8,0" Click="OnSave"
-                    Background="#0078D4" Foreground="White" BorderBrush="#0078D4" Padding="8,6"/>
+                    Background="{DynamicResource AccentButtonBackground}" Foreground="{DynamicResource AccentButtonForeground}" BorderBrush="{DynamicResource AccentButtonBackground}" Padding="8,6"/>
             <Button Content="Cancel" Width="80" Click="OnCancel"
-                    Background="#333333" Foreground="White" BorderBrush="#555555" Padding="8,6"/>
+                    Background="{DynamicResource SettingsButtonBackground}" Foreground="{DynamicResource SettingsButtonForeground}" BorderBrush="{DynamicResource SettingsButtonBorder}" Padding="8,6"/>
         </StackPanel>
     </Grid>
 </Window>

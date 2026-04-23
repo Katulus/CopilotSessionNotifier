@@ -25,6 +25,8 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
 
+        ThemeService.ApplyTheme(this);
+
         _settings = AppSettings.Load();
         _notificationManager = new NotificationManager();
 
