@@ -10,6 +10,11 @@ public class SessionStateTracker
     private bool _initialScanComplete;
     private readonly object _lock = new();
     private readonly HashSet<string> _notifiedEventIds = new();
+    
+    // Debounce: pending turn_end notifications wait before firing
+    private readonly Dictionary<string, System.Threading.Timer> _pendingTurnEndTimers = new();
+    private readonly Dictionary<string, (NotificationItem item, string eventId)> _pendingTurnEndData = new();
+    private const int TurnEndDebounceMs = 5000;
 
     public SessionStateTracker(string sessionStatePath)
     {
@@ -109,20 +114,42 @@ public class SessionStateTracker
 
                 UpdateSessionFromEvent(session, evt, sessionDir);
 
-                if (_initialScanComplete && EventParser.IsNotificationWorthy(evt.Type))
+                if (!_initialScanComplete)
+                    continue;
+
+                // If we see a turn_start, cancel any pending turn_end notification for this session
+                if (evt.Type == "assistant.turn_start")
+                {
+                    CancelPendingTurnEnd(session.Id);
+                    continue;
+                }
+
+                if (EventParser.IsNotificationWorthy(evt.Type))
                 {
                     var notifType = EventParser.GetNotificationType(evt.Type);
                     if (notifType.HasValue && _notifiedEventIds.Add(evt.Id))
                     {
                         session.LastNotifiedEventId = evt.Id;
                         UpdateSessionMetadata(session, sessionDir);
-                        NotificationReady?.Invoke(new NotificationItem(
+
+                        var item = new NotificationItem(
                             session.Id,
                             session.DisplayName,
                             notifType.Value,
                             evt.Timestamp,
                             session.Pid
-                        ));
+                        );
+
+                        if (evt.Type == "assistant.turn_end")
+                        {
+                            // Debounce: wait before notifying, cancel if turn_start follows
+                            SchedulePendingTurnEnd(session.Id, item, evt.Id);
+                        }
+                        else
+                        {
+                            // Immediate notification for shutdown, task_complete
+                            NotificationReady?.Invoke(item);
+                        }
                     }
                 }
             }
@@ -130,6 +157,58 @@ public class SessionStateTracker
         catch (IOException)
         {
             // File is being written to, will retry on next poll
+        }
+    }
+
+    private void SchedulePendingTurnEnd(string sessionId, NotificationItem item, string eventId)
+    {
+        // Cancel any existing pending notification for this session
+        CancelPendingTurnEnd(sessionId);
+
+        _pendingTurnEndData[sessionId] = (item, eventId);
+        _pendingTurnEndTimers[sessionId] = new System.Threading.Timer(
+            _ => FirePendingTurnEnd(sessionId),
+            null,
+            TurnEndDebounceMs,
+            System.Threading.Timeout.Infinite
+        );
+    }
+
+    private void CancelPendingTurnEnd(string sessionId)
+    {
+        if (_pendingTurnEndTimers.TryGetValue(sessionId, out var timer))
+        {
+            timer.Dispose();
+            _pendingTurnEndTimers.Remove(sessionId);
+        }
+        if (_pendingTurnEndData.TryGetValue(sessionId, out var data))
+        {
+            // Remove the event ID from notified set so it doesn't block future dedup
+            _notifiedEventIds.Remove(data.eventId);
+            _pendingTurnEndData.Remove(sessionId);
+        }
+    }
+
+    private void FirePendingTurnEnd(string sessionId)
+    {
+        NotificationItem? item = null;
+        lock (_lock)
+        {
+            if (_pendingTurnEndData.TryGetValue(sessionId, out var data))
+            {
+                item = data.item;
+                _pendingTurnEndData.Remove(sessionId);
+            }
+            if (_pendingTurnEndTimers.TryGetValue(sessionId, out var timer))
+            {
+                timer.Dispose();
+                _pendingTurnEndTimers.Remove(sessionId);
+            }
+        }
+
+        if (item != null)
+        {
+            NotificationReady?.Invoke(item);
         }
     }
 
@@ -147,6 +226,8 @@ public class SessionStateTracker
                 break;
             case "session.shutdown":
                 session.IsShutdown = true;
+                // Cancel any pending turn_end when session shuts down
+                CancelPendingTurnEnd(session.Id);
                 break;
         }
     }
@@ -185,8 +266,10 @@ public class SessionStateTracker
             var lockFiles = Directory.GetFiles(sessionDir, "inuse.*.lock");
             if (lockFiles.Length > 0)
             {
-                var pidStr = File.ReadAllText(lockFiles[0]).Trim();
-                if (int.TryParse(pidStr, out var pid))
+                // Extract PID from filename: inuse.{PID}.lock
+                var fileName = Path.GetFileName(lockFiles[0]);
+                var parts = fileName.Split('.');
+                if (parts.Length >= 2 && int.TryParse(parts[1], out var pid))
                     session.Pid = pid;
             }
             else
