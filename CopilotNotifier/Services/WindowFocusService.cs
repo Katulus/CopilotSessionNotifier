@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Management;
 using System.Runtime.InteropServices;
 using System.Windows.Automation;
 
@@ -28,24 +27,54 @@ public static class WindowFocusService
     [DllImport("kernel32.dll")]
     private static extern uint GetCurrentThreadId();
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
+
+    [DllImport("kernel32.dll")]
+    private static extern bool Process32First(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+
+    [DllImport("kernel32.dll")]
+    private static extern bool Process32Next(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+
+    [DllImport("kernel32.dll")]
+    private static extern bool CloseHandle(IntPtr hObject);
+
+    private const uint TH32CS_SNAPPROCESS = 0x00000002;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    private struct PROCESSENTRY32
+    {
+        public uint dwSize;
+        public uint cntUsage;
+        public uint th32ProcessID;
+        public IntPtr th32DefaultHeapID;
+        public uint th32ModuleID;
+        public uint cntThreads;
+        public uint th32ParentProcessID;
+        public int pcPriClassBase;
+        public uint dwFlags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string szExeFile;
+    }
+
     private const int SW_RESTORE = 9;
 
     public static bool FocusTerminalWindow(int pid, string? sessionName = null)
     {
         try
         {
-            // Walk up the process tree to find the nearest ancestor with a window
-            var (windowHandle, wtPid, shellPid) = FindHostingWindow(pid);
+            // Single snapshot for the entire operation — replaces all WMI calls
+            var parentMap = BuildParentMap();
+
+            var (windowHandle, wtPid, shellPid) = FindHostingWindow(pid, parentMap);
             if (windowHandle == IntPtr.Zero)
                 return false;
 
-            // Bring the window to front first (this always works)
             BringWindowToFront(windowHandle);
 
-            // If we found a Windows Terminal, try to switch to the correct tab
             if (wtPid > 0)
             {
-                TrySwitchToTab(windowHandle, sessionName, wtPid, shellPid);
+                TrySwitchToTab(windowHandle, sessionName, wtPid, shellPid, parentMap);
             }
 
             return true;
@@ -60,7 +89,7 @@ public static class WindowFocusService
     /// Walks up from pid to find the first ancestor with a visible window.
     /// Returns (windowHandle, wtProcessId if WT, directShellPid under WT).
     /// </summary>
-    private static (IntPtr handle, int wtPid, int shellPid) FindHostingWindow(int startPid)
+    private static (IntPtr handle, int wtPid, int shellPid) FindHostingWindow(int startPid, Dictionary<int, int> parentMap)
     {
         int previousPid = startPid;
         int currentPid = startPid;
@@ -79,7 +108,7 @@ public static class WindowFocusService
 
                 // Move up
                 previousPid = currentPid;
-                currentPid = GetParentPid(currentPid);
+                currentPid = GetParentPid(currentPid, parentMap);
                 if (currentPid <= 0)
                     break;
             }
@@ -97,7 +126,7 @@ public static class WindowFocusService
     /// Primary strategy: match tab name against session name.
     /// Fallback: match via process tree ancestry.
     /// </summary>
-    private static void TrySwitchToTab(IntPtr wtHandle, string? sessionName, int wtPid, int shellPid)
+    private static void TrySwitchToTab(IntPtr wtHandle, string? sessionName, int wtPid, int shellPid, Dictionary<int, int> parentMap)
     {
         try
         {
@@ -143,7 +172,7 @@ public static class WindowFocusService
             // is an ancestor of our target process
             if (shellPid > 0)
             {
-                var shellPids = GetDirectChildPids(wtPid)
+                var shellPids = GetDirectChildPids(wtPid, parentMap)
                     .Where(pid =>
                     {
                         try
@@ -158,7 +187,7 @@ public static class WindowFocusService
 
                 for (int i = 0; i < shellPids.Count && i < tabItems.Count; i++)
                 {
-                    if (shellPids[i] == shellPid || IsDescendantOf(shellPid, shellPids[i]))
+                    if (shellPids[i] == shellPid || IsDescendantOf(shellPid, shellPids[i], parentMap))
                     {
                         SelectTab(tabItems[i]);
                         return;
@@ -179,12 +208,12 @@ public static class WindowFocusService
         catch { }
     }
 
-    private static bool IsDescendantOf(int targetPid, int rootPid)
+    private static bool IsDescendantOf(int targetPid, int rootPid, Dictionary<int, int> parentMap)
     {
         int current = targetPid;
         for (int i = 0; i < 20; i++)
         {
-            int parent = GetParentPid(current);
+            int parent = GetParentPid(current, parentMap);
             if (parent <= 0) return false;
             if (parent == rootPid) return true;
             current = parent;
@@ -192,35 +221,47 @@ public static class WindowFocusService
         return false;
     }
 
-    private static int GetParentPid(int pid)
+    /// <summary>
+    /// Takes a single process snapshot and builds a parent-pid lookup dictionary.
+    /// This replaces per-call WMI queries and is near-instant.
+    /// </summary>
+    private static Dictionary<int, int> BuildParentMap()
     {
+        var map = new Dictionary<int, int>();
+        IntPtr snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if (snap == IntPtr.Zero || snap == new IntPtr(-1))
+            return map;
+
         try
         {
-            using var searcher = new ManagementObjectSearcher(
-                $"SELECT ParentProcessId FROM Win32_Process WHERE ProcessId = {pid}");
-            foreach (var obj in searcher.Get())
+            var entry = new PROCESSENTRY32 { dwSize = (uint)Marshal.SizeOf<PROCESSENTRY32>() };
+            if (Process32First(snap, ref entry))
             {
-                return Convert.ToInt32(obj["ParentProcessId"]);
+                do
+                {
+                    map[(int)entry.th32ProcessID] = (int)entry.th32ParentProcessID;
+                } while (Process32Next(snap, ref entry));
             }
         }
-        catch { }
-        return -1;
+        finally
+        {
+            CloseHandle(snap);
+        }
+
+        return map;
     }
 
-    private static List<int> GetDirectChildPids(int parentPid)
+    private static int GetParentPid(int pid, Dictionary<int, int> parentMap)
     {
-        var children = new List<int>();
-        try
-        {
-            using var searcher = new ManagementObjectSearcher(
-                $"SELECT ProcessId FROM Win32_Process WHERE ParentProcessId = {parentPid}");
-            foreach (var obj in searcher.Get())
-            {
-                children.Add(Convert.ToInt32(obj["ProcessId"]));
-            }
-        }
-        catch { }
-        return children;
+        return parentMap.TryGetValue(pid, out int parent) ? parent : -1;
+    }
+
+    private static List<int> GetDirectChildPids(int parentPid, Dictionary<int, int> parentMap)
+    {
+        return parentMap
+            .Where(kvp => kvp.Value == parentPid)
+            .Select(kvp => kvp.Key)
+            .ToList();
     }
 
     private static bool BringWindowToFront(IntPtr hWnd)
