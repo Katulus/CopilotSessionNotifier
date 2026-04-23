@@ -8,6 +8,8 @@ public class SessionStateTracker
     private readonly Dictionary<string, SessionInfo> _sessions = new();
     private readonly string _sessionStatePath;
     private bool _initialScanComplete;
+    private readonly object _lock = new();
+    private readonly HashSet<string> _notifiedEventIds = new();
 
     public SessionStateTracker(string sessionStatePath)
     {
@@ -16,30 +18,34 @@ public class SessionStateTracker
 
     public event Action<NotificationItem>? NotificationReady;
 
-    public IReadOnlyDictionary<string, SessionInfo> Sessions => _sessions;
+    public IReadOnlyDictionary<string, SessionInfo> Sessions
+    {
+        get { lock (_lock) { return new Dictionary<string, SessionInfo>(_sessions); } }
+    }
 
     public void PerformInitialScan()
     {
         if (!Directory.Exists(_sessionStatePath))
             return;
 
-        foreach (var dir in Directory.GetDirectories(_sessionStatePath))
+        lock (_lock)
         {
-            var sessionId = Path.GetFileName(dir);
-            var eventsFile = Path.Combine(dir, "events.jsonl");
-            if (!File.Exists(eventsFile))
-                continue;
+            foreach (var dir in Directory.GetDirectories(_sessionStatePath))
+            {
+                var sessionId = Path.GetFileName(dir);
+                var eventsFile = Path.Combine(dir, "events.jsonl");
+                if (!File.Exists(eventsFile))
+                    continue;
 
-            var session = GetOrCreateSession(sessionId, dir);
-            // On initial scan, just move the read position to end of file
-            using var fs = new FileStream(eventsFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            session.LastReadPosition = fs.Length;
+                var session = GetOrCreateSession(sessionId, dir);
+                using var fs = new FileStream(eventsFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                session.LastReadPosition = fs.Length;
 
-            // Read workspace.yaml for metadata
-            UpdateSessionMetadata(session, dir);
+                UpdateSessionMetadata(session, dir);
+            }
+
+            _initialScanComplete = true;
         }
-
-        _initialScanComplete = true;
     }
 
     public void ProcessSessionDirectory(string sessionDir)
@@ -49,11 +55,14 @@ public class SessionStateTracker
         if (!File.Exists(eventsFile))
             return;
 
-        var session = GetOrCreateSession(sessionId, sessionDir);
-        if (session.IsShutdown)
-            return;
+        lock (_lock)
+        {
+            var session = GetOrCreateSession(sessionId, sessionDir);
+            if (session.IsShutdown)
+                return;
 
-        ReadNewEvents(session, eventsFile, sessionDir);
+            ReadNewEvents(session, eventsFile, sessionDir);
+        }
     }
 
     public void ScanAllSessions()
@@ -103,7 +112,7 @@ public class SessionStateTracker
                 if (_initialScanComplete && EventParser.IsNotificationWorthy(evt.Type))
                 {
                     var notifType = EventParser.GetNotificationType(evt.Type);
-                    if (notifType.HasValue && evt.Id != session.LastNotifiedEventId)
+                    if (notifType.HasValue && _notifiedEventIds.Add(evt.Id))
                     {
                         session.LastNotifiedEventId = evt.Id;
                         UpdateSessionMetadata(session, sessionDir);
