@@ -2,6 +2,8 @@
 
 A Windows system tray application that monitors [GitHub Copilot CLI](https://githubnext.com/projects/copilot-cli/) sessions and shows popup notifications when sessions need your attention.
 
+**_Note:_** This application was fully vibecoded.
+
 ## Features
 
 - **🔔 Real-time notifications** — Get notified when a Copilot CLI session:
@@ -31,9 +33,6 @@ Only new events are processed — the app tracks file read positions and never r
 ## Build & Run
 
 ```powershell
-# If MSBuildSDKsPath is set to an older SDK, clear it first
-$env:MSBuildSDKsPath = $null
-
 # Build
 dotnet build CopilotNotifier\CopilotNotifier.csproj
 
@@ -44,7 +43,6 @@ dotnet run --project CopilotNotifier\CopilotNotifier.csproj
 ## Publish as Standalone Executable
 
 ```powershell
-$env:MSBuildSDKsPath = $null
 dotnet publish CopilotNotifier\CopilotNotifier.csproj -c Release -r win-x64
 ```
 
