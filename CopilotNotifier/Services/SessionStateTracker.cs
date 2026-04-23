@@ -125,6 +125,9 @@ public class SessionStateTracker
                     evt.Data?.ToolName == "ask_user" &&
                     _notifiedEventIds.Add(evt.Id))
                 {
+                    // Suppress the turn_end that follows after user answers
+                    _suppressNextTurnEnd.Add(session.Id);
+
                     session.LastNotifiedEventId = evt.Id;
                     UpdateSessionMetadata(session, sessionDir);
 

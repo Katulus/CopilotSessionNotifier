@@ -72,7 +72,7 @@ public static class EventParser
 
     public static NotificationType? GetNotificationType(string eventType) => eventType switch
     {
-        "assistant.turn_end" => NotificationType.WaitingForInput,
+        "assistant.turn_end" => NotificationType.TaskComplete,
         "session.shutdown" => NotificationType.SessionCompleted,
         "session.task_complete" => NotificationType.TaskComplete,
         _ => null
