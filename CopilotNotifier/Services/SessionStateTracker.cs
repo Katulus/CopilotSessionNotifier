@@ -260,17 +260,27 @@ public class SessionStateTracker
             catch (IOException) { }
         }
 
-        // Read lock file for PID
+        // Read lock file for PID — only set if process is actually alive
         try
         {
             var lockFiles = Directory.GetFiles(sessionDir, "inuse.*.lock");
             if (lockFiles.Length > 0)
             {
-                // Extract PID from filename: inuse.{PID}.lock
                 var fileName = Path.GetFileName(lockFiles[0]);
                 var parts = fileName.Split('.');
                 if (parts.Length >= 2 && int.TryParse(parts[1], out var pid))
-                    session.Pid = pid;
+                {
+                    try
+                    {
+                        System.Diagnostics.Process.GetProcessById(pid);
+                        session.Pid = pid;
+                    }
+                    catch (ArgumentException)
+                    {
+                        // Process is dead — stale lock file
+                        session.Pid = null;
+                    }
+                }
             }
             else
             {
