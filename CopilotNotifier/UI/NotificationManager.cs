@@ -23,11 +23,14 @@ public class NotificationManager
         _focusPollTimer.Tick += OnFocusPollTick;
     }
 
-    public void ShowNotification(NotificationItem item, TimeSpan? autoDismissAfter = null)
+    public void ShowNotification(NotificationItem item, TimeSpan? autoDismissAfter = null, bool exemptFromFocusDismiss = false)
     {
         WpfApplication.Current.Dispatcher.Invoke(() =>
         {
-            var popup = new NotificationPopup(item, autoDismissAfter);
+            var popup = new NotificationPopup(item, autoDismissAfter)
+            {
+                ExemptFromFocusDismiss = exemptFromFocusDismiss
+            };
             popup.PopupClosed += OnPopupClosed;
             popup.BodyClicked += OnPopupBodyClicked;
 
@@ -65,10 +68,10 @@ public class NotificationManager
         }
 
         // Dedupe by session so we check each terminal at most once per tick.
-        // Exclude transient (auto-dismiss) popups — they manage their own lifetime
-        // and were intentionally shown while the terminal is focused.
+        // Exclude popups shown while the terminal was already focused — they manage
+        // their own lifetime (either via auto-dismiss timer or explicit user action).
         var bySession = snapshot
-            .Where(p => p.Item.Pid.HasValue && !p.HasAutoDismiss)
+            .Where(p => p.Item.Pid.HasValue && !p.HasAutoDismiss && !p.ExemptFromFocusDismiss)
             .GroupBy(p => p.Item.SessionId);
 
         foreach (var group in bySession)
@@ -90,7 +93,7 @@ public class NotificationManager
             lock (_lock)
             {
                 toClose = _activePopups
-                    .Where(p => p.Item.SessionId == sessionId && p != except && !p.HasAutoDismiss)
+                    .Where(p => p.Item.SessionId == sessionId && p != except && !p.HasAutoDismiss && !p.ExemptFromFocusDismiss)
                     .ToList();
             }
 

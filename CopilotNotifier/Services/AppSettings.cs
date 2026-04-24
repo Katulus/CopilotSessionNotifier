@@ -12,6 +12,7 @@ public class AppSettings
     public bool NotifyOnSessionComplete { get; set; } = true;
     public bool NotifyOnTaskComplete { get; set; } = true;
     public bool AutoDismissWhenFocused { get; set; } = true;
+    public int AutoDismissSeconds { get; set; } = 4;
 
     private static readonly string SettingsPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),

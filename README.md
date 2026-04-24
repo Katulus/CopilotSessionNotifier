@@ -59,7 +59,8 @@ Right-click the tray icon → **Settings** (or double-click the icon):
 | Notify on session complete | Show popup when session shuts down |
 | Notify on task complete | Show popup when a background task finishes |
 | Play notification sound | Play Windows notification sound |
-| Auto-dismiss when session terminal is focused | Show notification briefly instead of persistently if the session's terminal window/tab is already in the foreground |
+| Auto-dismiss when session terminal is focused | If the session's terminal is already focused when an event fires, show the popup as transient instead of persistent |
+| Dismiss after _N_ seconds | How long a transient (focused-terminal) popup stays on screen. `0` = persists until clicked or closed |
 | Start with Windows | Register in Windows startup (HKCU Run key) |
 
 Settings are saved to `%APPDATA%\CopilotNotifier\settings.json`.

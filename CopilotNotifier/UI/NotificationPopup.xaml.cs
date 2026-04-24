@@ -17,6 +17,7 @@ public partial class NotificationPopup : Window
 
     public NotificationItem Item => _item;
     public bool HasAutoDismiss => _autoDismissAfter.HasValue;
+    public bool ExemptFromFocusDismiss { get; set; }
 
     public NotificationPopup(NotificationItem item, TimeSpan? autoDismissAfter = null)
     {

@@ -153,17 +153,20 @@ public partial class App : System.Windows.Application
         if (!shouldNotify) return;
 
         // If the session's terminal is already in focus, the user is actively looking
-        // at it — show a transient popup instead of a persistent one.
+        // at it — show a transient popup (with optional timeout) instead of a persistent one.
         TimeSpan? autoDismiss = null;
+        bool shownWhileFocused = false;
         if (_settings.AutoDismissWhenFocused && item.Pid.HasValue &&
             WindowFocusService.IsTerminalWindowFocused(item.Pid.Value, item.DisplayName))
         {
-            autoDismiss = TimeSpan.FromSeconds(4);
+            shownWhileFocused = true;
+            if (_settings.AutoDismissSeconds > 0)
+                autoDismiss = TimeSpan.FromSeconds(_settings.AutoDismissSeconds);
         }
 
         Dispatcher.BeginInvoke(() =>
         {
-            _notificationManager?.ShowNotification(item, autoDismiss);
+            _notificationManager?.ShowNotification(item, autoDismiss, shownWhileFocused);
 
             if (_settings.PlaySound)
             {
