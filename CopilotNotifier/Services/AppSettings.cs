@@ -11,6 +11,7 @@ public class AppSettings
     public bool NotifyOnWaitingForInput { get; set; } = true;
     public bool NotifyOnSessionComplete { get; set; } = true;
     public bool NotifyOnTaskComplete { get; set; } = true;
+    public bool AutoDismissWhenFocused { get; set; } = true;
 
     private static readonly string SettingsPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),

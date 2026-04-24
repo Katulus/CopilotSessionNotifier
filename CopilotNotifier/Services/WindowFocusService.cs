@@ -86,6 +86,61 @@ public static class WindowFocusService
     }
 
     /// <summary>
+    /// Returns true if the terminal window hosting <paramref name="pid"/> is currently
+    /// the foreground window. For Windows Terminal, also verifies the matching tab is
+    /// the selected one.
+    /// </summary>
+    public static bool IsTerminalWindowFocused(int pid, string? sessionName = null)
+    {
+        try
+        {
+            var parentMap = BuildParentMap();
+            var (windowHandle, wtPid, shellPid) = FindHostingWindow(pid, parentMap);
+            if (windowHandle == IntPtr.Zero)
+                return false;
+
+            if (GetForegroundWindow() != windowHandle)
+                return false;
+
+            // Non-WT host: foreground window is enough.
+            if (wtPid <= 0)
+                return true;
+
+            // Windows Terminal: check that the matching tab is the active one.
+            try
+            {
+                var wtElement = AutomationElement.FromHandle(windowHandle);
+                if (wtElement == null) return true;
+
+                var tabItems = wtElement.FindAll(TreeScope.Descendants,
+                    new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.TabItem));
+
+                // Single tab => hosting window focus implies session focus.
+                if (tabItems.Count <= 1)
+                    return true;
+
+                var match = FindMatchingTab(tabItems, sessionName, wtPid, shellPid, parentMap);
+                if (match == null)
+                {
+                    // Couldn't identify the session's tab; fall back to window focus.
+                    return true;
+                }
+
+                var sel = match.GetCurrentPattern(SelectionItemPattern.Pattern) as SelectionItemPattern;
+                return sel?.Current.IsSelected ?? true;
+            }
+            catch
+            {
+                return true;
+            }
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Walks up from pid to find the first ancestor with a visible window.
     /// Returns (windowHandle, wtProcessId if WT, directShellPid under WT).
     /// </summary>
@@ -139,63 +194,75 @@ public static class WindowFocusService
             if (tabItems.Count <= 1)
                 return;
 
-            // Strategy 1: Match by tab name containing session name
-            if (!string.IsNullOrWhiteSpace(sessionName))
-            {
-                foreach (AutomationElement tab in tabItems)
-                {
-                    var tabName = tab.Current.Name ?? "";
-                    if (tabName.Contains(sessionName, StringComparison.OrdinalIgnoreCase)
-                        || sessionName.Contains(tabName, StringComparison.OrdinalIgnoreCase))
-                    {
-                        SelectTab(tab);
-                        return;
-                    }
-                }
+            var match = FindMatchingTab(tabItems, sessionName, wtPid, shellPid, parentMap);
+            if (match != null)
+                SelectTab(match);
+        }
+        catch { }
+    }
 
-                // Try partial match: first 40 chars of either
-                var shortSession = sessionName.Length > 40 ? sessionName[..40] : sessionName;
-                foreach (AutomationElement tab in tabItems)
+    /// <summary>
+    /// Identifies which Windows Terminal tab corresponds to a given session, either by
+    /// matching session name against tab name or by walking the process tree.
+    /// </summary>
+    private static AutomationElement? FindMatchingTab(
+        AutomationElementCollection tabItems, string? sessionName, int wtPid, int shellPid,
+        Dictionary<int, int> parentMap)
+    {
+        // Strategy 1: Match by tab name containing session name
+        if (!string.IsNullOrWhiteSpace(sessionName))
+        {
+            foreach (AutomationElement tab in tabItems)
+            {
+                var tabName = tab.Current.Name ?? "";
+                if (tabName.Contains(sessionName, StringComparison.OrdinalIgnoreCase)
+                    || sessionName.Contains(tabName, StringComparison.OrdinalIgnoreCase))
                 {
-                    var tabName = tab.Current.Name ?? "";
-                    var shortTab = tabName.Length > 40 ? tabName[..40] : tabName;
-                    if (shortTab.Contains(shortSession, StringComparison.OrdinalIgnoreCase)
-                        || shortSession.Contains(shortTab, StringComparison.OrdinalIgnoreCase))
-                    {
-                        SelectTab(tab);
-                        return;
-                    }
+                    return tab;
                 }
             }
 
-            // Strategy 2: Match via process tree — find which shell child of WT
-            // is an ancestor of our target process
-            if (shellPid > 0)
+            // Try partial match: first 40 chars of either
+            var shortSession = sessionName.Length > 40 ? sessionName[..40] : sessionName;
+            foreach (AutomationElement tab in tabItems)
             {
-                var shellPids = GetDirectChildPids(wtPid, parentMap)
-                    .Where(pid =>
-                    {
-                        try
-                        {
-                            var p = Process.GetProcessById(pid);
-                            var name = p.ProcessName.ToLowerInvariant();
-                            return name is "pwsh" or "powershell" or "cmd" or "bash" or "wsl" or "zsh";
-                        }
-                        catch { return false; }
-                    })
-                    .ToList();
-
-                for (int i = 0; i < shellPids.Count && i < tabItems.Count; i++)
+                var tabName = tab.Current.Name ?? "";
+                var shortTab = tabName.Length > 40 ? tabName[..40] : tabName;
+                if (shortTab.Contains(shortSession, StringComparison.OrdinalIgnoreCase)
+                    || shortSession.Contains(shortTab, StringComparison.OrdinalIgnoreCase))
                 {
-                    if (shellPids[i] == shellPid || IsDescendantOf(shellPid, shellPids[i], parentMap))
-                    {
-                        SelectTab(tabItems[i]);
-                        return;
-                    }
+                    return tab;
                 }
             }
         }
-        catch { }
+
+        // Strategy 2: Match via process tree — find which shell child of WT
+        // is an ancestor of our target process
+        if (shellPid > 0)
+        {
+            var shellPids = GetDirectChildPids(wtPid, parentMap)
+                .Where(pid =>
+                {
+                    try
+                    {
+                        var p = Process.GetProcessById(pid);
+                        var name = p.ProcessName.ToLowerInvariant();
+                        return name is "pwsh" or "powershell" or "cmd" or "bash" or "wsl" or "zsh";
+                    }
+                    catch { return false; }
+                })
+                .ToList();
+
+            for (int i = 0; i < shellPids.Count && i < tabItems.Count; i++)
+            {
+                if (shellPids[i] == shellPid || IsDescendantOf(shellPid, shellPids[i], parentMap))
+                {
+                    return tabItems[i];
+                }
+            }
+        }
+
+        return null;
     }
 
     private static void SelectTab(AutomationElement tab)

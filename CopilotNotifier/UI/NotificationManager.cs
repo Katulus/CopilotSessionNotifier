@@ -10,11 +10,11 @@ public class NotificationManager
     private readonly object _lock = new();
     private const double Margin = 10;
 
-    public void ShowNotification(NotificationItem item)
+    public void ShowNotification(NotificationItem item, TimeSpan? autoDismissAfter = null)
     {
         WpfApplication.Current.Dispatcher.Invoke(() =>
         {
-            var popup = new NotificationPopup(item);
+            var popup = new NotificationPopup(item, autoDismissAfter);
             popup.PopupClosed += OnPopupClosed;
 
             lock (_lock)
