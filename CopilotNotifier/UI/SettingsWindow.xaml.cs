@@ -16,6 +16,7 @@ public partial class SettingsWindow : Window
         ChkSessionComplete.IsChecked = settings.NotifyOnSessionComplete;
         ChkTaskComplete.IsChecked = settings.NotifyOnTaskComplete;
         ChkPlaySound.IsChecked = settings.PlaySound;
+        ChkAutoDismissWhenFocused.IsChecked = settings.AutoDismissWhenFocused;
         ChkAutoStart.IsChecked = settings.AutoStart;
     }
 
@@ -25,6 +26,7 @@ public partial class SettingsWindow : Window
         _settings.NotifyOnSessionComplete = ChkSessionComplete.IsChecked == true;
         _settings.NotifyOnTaskComplete = ChkTaskComplete.IsChecked == true;
         _settings.PlaySound = ChkPlaySound.IsChecked == true;
+        _settings.AutoDismissWhenFocused = ChkAutoDismissWhenFocused.IsChecked == true;
         _settings.AutoStart = ChkAutoStart.IsChecked == true;
         _settings.Save();
 

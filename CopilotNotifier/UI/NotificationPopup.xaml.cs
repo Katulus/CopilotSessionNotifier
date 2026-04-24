@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Media.Animation;
+using System.Windows.Threading;
 using CopilotNotifier.Models;
 using CopilotNotifier.Services;
 
@@ -8,12 +9,19 @@ namespace CopilotNotifier.UI;
 public partial class NotificationPopup : Window
 {
     private readonly NotificationItem _item;
+    private readonly TimeSpan? _autoDismissAfter;
+    private DispatcherTimer? _autoDismissTimer;
+    private bool _closing;
     public event Action<NotificationPopup>? PopupClosed;
+    public event Action<NotificationPopup>? BodyClicked;
 
-    public NotificationPopup(NotificationItem item)
+    public NotificationItem Item => _item;
+
+    public NotificationPopup(NotificationItem item, TimeSpan? autoDismissAfter = null)
     {
         InitializeComponent();
         _item = item;
+        _autoDismissAfter = autoDismissAfter;
 
         IconText.Text = item.Icon;
         TitleText.Text = item.DisplayName;
@@ -27,6 +35,17 @@ public partial class NotificationPopup : Window
     {
         var storyboard = (Storyboard)FindResource("SlideIn");
         storyboard.Begin(this);
+
+        if (_autoDismissAfter is { } delay)
+        {
+            _autoDismissTimer = new DispatcherTimer { Interval = delay };
+            _autoDismissTimer.Tick += (_, _) =>
+            {
+                _autoDismissTimer?.Stop();
+                if (!_closing) AnimateClose();
+            };
+            _autoDismissTimer.Start();
+        }
     }
 
     public void SetPosition(double right, double bottom)
@@ -47,11 +66,15 @@ public partial class NotificationPopup : Window
         {
             WindowFocusService.FocusTerminalWindow(_item.Pid.Value, _item.DisplayName);
         }
+        BodyClicked?.Invoke(this);
         AnimateClose();
     }
 
     private void AnimateClose()
     {
+        if (_closing) return;
+        _closing = true;
+        _autoDismissTimer?.Stop();
         var storyboard = (Storyboard)FindResource("SlideOut");
         storyboard.Begin(this);
     }

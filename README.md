@@ -12,6 +12,7 @@ A Windows system tray application that monitors [GitHub Copilot CLI](https://git
   - 🔔 Finishes a background task
 - **📌 Persistent popups** — Notifications stay in the lower-right corner until you dismiss them
 - **🖱️ Click to focus** — Click a notification to bring the terminal window to the foreground
+- **🧹 Auto-dismiss on focus** — Once a session's terminal is focused (via click or manually), other pending notifications for that session are dismissed
 - **🌙 Light & dark theme** — Automatically matches your Windows theme setting
 - **⚡ Auto-start** — Optional Windows startup registration
 - **📋 Active sessions list** — Right-click the tray icon to see all running sessions
@@ -58,6 +59,7 @@ Right-click the tray icon → **Settings** (or double-click the icon):
 | Notify on session complete | Show popup when session shuts down |
 | Notify on task complete | Show popup when a background task finishes |
 | Play notification sound | Play Windows notification sound |
+| Auto-dismiss when session terminal is focused | Show notification briefly instead of persistently if the session's terminal window/tab is already in the foreground |
 | Start with Windows | Register in Windows startup (HKCU Run key) |
 
 Settings are saved to `%APPDATA%\CopilotNotifier\settings.json`.
