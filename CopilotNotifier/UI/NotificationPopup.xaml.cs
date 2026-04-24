@@ -13,6 +13,9 @@ public partial class NotificationPopup : Window
     private DispatcherTimer? _autoDismissTimer;
     private bool _closing;
     public event Action<NotificationPopup>? PopupClosed;
+    public event Action<NotificationPopup>? BodyClicked;
+
+    public NotificationItem Item => _item;
 
     public NotificationPopup(NotificationItem item, TimeSpan? autoDismissAfter = null)
     {
@@ -63,6 +66,7 @@ public partial class NotificationPopup : Window
         {
             WindowFocusService.FocusTerminalWindow(_item.Pid.Value, _item.DisplayName);
         }
+        BodyClicked?.Invoke(this);
         AnimateClose();
     }
 
