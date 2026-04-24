@@ -13,6 +13,8 @@ public class AppSettings
     public bool NotifyOnTaskComplete { get; set; } = true;
     public bool AutoDismissWhenFocused { get; set; } = true;
     public int AutoDismissSeconds { get; set; } = 4;
+    public bool NotifyOnApprovalPending { get; set; } = true;
+    public int ApprovalPendingDelaySeconds { get; set; } = 2;
 
     private static readonly string SettingsPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),

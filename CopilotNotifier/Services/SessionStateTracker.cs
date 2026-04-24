@@ -23,7 +23,9 @@ public class SessionStateTracker
         "powershell", "bash", "shell", "create", "edit", "write"
     };
 
-    private static readonly TimeSpan ApprovalPendingDelay = TimeSpan.FromSeconds(2);
+    // Configurable at runtime via App settings. 0 or negative disables detection.
+    public bool ApprovalDetectionEnabled { get; set; } = true;
+    public TimeSpan ApprovalPendingDelay { get; set; } = TimeSpan.FromSeconds(2);
 
     // Pending-approval timers keyed by toolCallId. If the paired
     // tool.execution_complete / abort arrives before the timer fires, the timer
@@ -157,7 +159,9 @@ public class SessionStateTracker
 
                 // Detect approvable tool starts — if unresolved within a short delay,
                 // treat as "waiting for approval" and emit a WaitingForInput notification.
-                if (evt.Type == "tool.execution_start" &&
+                if (ApprovalDetectionEnabled &&
+                    ApprovalPendingDelay > TimeSpan.Zero &&
+                    evt.Type == "tool.execution_start" &&
                     evt.Data?.ToolName != null &&
                     evt.Data?.ToolCallId != null &&
                     ApprovableTools.Contains(evt.Data.ToolName))

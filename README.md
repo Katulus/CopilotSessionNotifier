@@ -58,6 +58,8 @@ Right-click the tray icon → **Settings** (or double-click the icon):
 | Notify on waiting for input | Show popup when agent finishes its turn |
 | Notify on session complete | Show popup when session shuts down |
 | Notify on task complete | Show popup when a background task finishes |
+| Notify when a tool is waiting for approval | Show popup when a tool stays unresolved for the delay below, indicating Copilot is asking to approve it |
+| Detect after _N_ seconds | How long to wait after a tool starts before treating it as approval-pending |
 | Play notification sound | Play Windows notification sound |
 | Auto-dismiss when session terminal is focused | If the session's terminal is already focused when an event fires, show the popup as transient instead of persistent |
 | Dismiss after _N_ seconds | How long a transient (focused-terminal) popup stays on screen. `0` = persists until clicked or closed |

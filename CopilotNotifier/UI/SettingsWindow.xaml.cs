@@ -20,10 +20,12 @@ public partial class SettingsWindow : Window
         ChkPlaySound.IsChecked = settings.PlaySound;
         ChkAutoDismissWhenFocused.IsChecked = settings.AutoDismissWhenFocused;
         TxtAutoDismissSeconds.Text = settings.AutoDismissSeconds.ToString();
+        ChkApprovalPending.IsChecked = settings.NotifyOnApprovalPending;
+        TxtApprovalDelay.Text = settings.ApprovalPendingDelaySeconds.ToString();
         ChkAutoStart.IsChecked = settings.AutoStart;
     }
 
-    private void OnAutoDismissSecondsPreviewTextInput(object sender, System.Windows.Input.TextCompositionEventArgs e)
+    private void OnDigitsOnlyPreviewTextInput(object sender, System.Windows.Input.TextCompositionEventArgs e)
     {
         e.Handled = !DigitsOnly.IsMatch(e.Text);
     }
@@ -37,6 +39,9 @@ public partial class SettingsWindow : Window
         _settings.AutoDismissWhenFocused = ChkAutoDismissWhenFocused.IsChecked == true;
         if (int.TryParse(TxtAutoDismissSeconds.Text, out var secs) && secs >= 0)
             _settings.AutoDismissSeconds = secs;
+        _settings.NotifyOnApprovalPending = ChkApprovalPending.IsChecked == true;
+        if (int.TryParse(TxtApprovalDelay.Text, out var apSecs) && apSecs >= 0)
+            _settings.ApprovalPendingDelaySeconds = apSecs;
         _settings.AutoStart = ChkAutoStart.IsChecked == true;
         _settings.Save();
 

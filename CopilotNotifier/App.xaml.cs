@@ -32,6 +32,7 @@ public partial class App : System.Windows.Application
 
         _tracker = new SessionStateTracker(SessionStatePath);
         _tracker.NotificationReady += OnNotificationReady;
+        ApplyTrackerSettings();
         _tracker.PerformInitialScan();
 
         _watcher = new SessionWatcher(SessionStatePath, _tracker, Dispatcher);
@@ -175,12 +176,22 @@ public partial class App : System.Windows.Application
         });
     }
 
+    private void ApplyTrackerSettings()
+    {
+        if (_tracker == null || _settings == null) return;
+        _tracker.ApprovalDetectionEnabled = _settings.NotifyOnApprovalPending;
+        _tracker.ApprovalPendingDelay = TimeSpan.FromSeconds(Math.Max(0, _settings.ApprovalPendingDelaySeconds));
+    }
+
     private void ShowSettings()
     {
         Dispatcher.Invoke(() =>
         {
             var window = new SettingsWindow(_settings ?? new AppSettings());
-            window.ShowDialog();
+            if (window.ShowDialog() == true)
+            {
+                ApplyTrackerSettings();
+            }
         });
     }
 
