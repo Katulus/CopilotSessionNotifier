@@ -17,6 +17,20 @@ public class SessionStateTracker
     // Suppress turn_end after task_complete (they always come as a pair)
     private readonly HashSet<string> _suppressNextTurnEnd = new();
 
+    // Tools that typically require user approval before execution.
+    private static readonly HashSet<string> ApprovableTools = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "powershell", "bash", "shell", "create", "edit", "write"
+    };
+
+    private static readonly TimeSpan ApprovalPendingDelay = TimeSpan.FromSeconds(2);
+
+    // Pending-approval timers keyed by toolCallId. If the paired
+    // tool.execution_complete / abort arrives before the timer fires, the timer
+    // is cancelled; otherwise we treat it as "waiting for approval".
+    private readonly Dictionary<string, System.Threading.Timer> _pendingApprovalTimers = new();
+    private readonly Dictionary<string, HashSet<string>> _sessionPendingApprovals = new();
+
     public SessionStateTracker(string sessionStatePath)
     {
         _sessionStatePath = sessionStatePath;
@@ -141,6 +155,29 @@ public class SessionStateTracker
                     continue;
                 }
 
+                // Detect approvable tool starts — if unresolved within a short delay,
+                // treat as "waiting for approval" and emit a WaitingForInput notification.
+                if (evt.Type == "tool.execution_start" &&
+                    evt.Data?.ToolName != null &&
+                    evt.Data?.ToolCallId != null &&
+                    ApprovableTools.Contains(evt.Data.ToolName))
+                {
+                    ScheduleApprovalCheck(session, sessionDir, evt);
+                }
+
+                // Resolve any pending approval when the tool completes.
+                if ((evt.Type == "tool.execution_complete" || evt.Type == "abort") &&
+                    evt.Data?.ToolCallId != null)
+                {
+                    CancelApprovalCheck(session.Id, evt.Data.ToolCallId);
+                }
+
+                // An abort resolves all pending approvals for the session.
+                if (evt.Type == "abort")
+                {
+                    CancelAllApprovalChecks(session.Id);
+                }
+
                 if (EventParser.IsNotificationWorthy(evt.Type))
                 {
                     var notifType = EventParser.GetNotificationType(evt.Type);
@@ -201,6 +238,7 @@ public class SessionStateTracker
                 break;
             case "session.shutdown":
                 session.IsShutdown = true;
+                CancelAllApprovalChecks(session.Id);
                 break;
         }
     }
@@ -269,5 +307,78 @@ public class SessionStateTracker
             _sessions[sessionId] = session;
         }
         return session;
+    }
+
+    private void ScheduleApprovalCheck(SessionInfo session, string sessionDir, SessionEvent evt)
+    {
+        var toolCallId = evt.Data!.ToolCallId!;
+        if (_pendingApprovalTimers.ContainsKey(toolCallId))
+            return;
+
+        if (!_sessionPendingApprovals.TryGetValue(session.Id, out var set))
+        {
+            set = new HashSet<string>();
+            _sessionPendingApprovals[session.Id] = set;
+        }
+        set.Add(toolCallId);
+
+        var eventId = evt.Id;
+        var timestamp = evt.Timestamp;
+        var sessionId = session.Id;
+
+        var timer = new System.Threading.Timer(_ =>
+        {
+            NotificationItem? item = null;
+            lock (_lock)
+            {
+                if (!_pendingApprovalTimers.Remove(toolCallId))
+                    return;
+                if (_sessionPendingApprovals.TryGetValue(sessionId, out var s))
+                    s.Remove(toolCallId);
+
+                if (!_sessions.TryGetValue(sessionId, out var sess) || sess.IsShutdown)
+                    return;
+                if (!_notifiedEventIds.Add(eventId))
+                    return;
+
+                sess.LastNotifiedEventId = eventId;
+                UpdateSessionMetadata(sess, sessionDir);
+
+                item = new NotificationItem(
+                    sess.Id,
+                    sess.DisplayName,
+                    NotificationType.WaitingForInput,
+                    timestamp,
+                    sess.Pid
+                );
+            }
+
+            if (item != null)
+                NotificationReady?.Invoke(item);
+        }, null, ApprovalPendingDelay, Timeout.InfiniteTimeSpan);
+
+        _pendingApprovalTimers[toolCallId] = timer;
+    }
+
+    private void CancelApprovalCheck(string sessionId, string toolCallId)
+    {
+        if (_pendingApprovalTimers.Remove(toolCallId, out var timer))
+        {
+            timer.Dispose();
+            if (_sessionPendingApprovals.TryGetValue(sessionId, out var s))
+                s.Remove(toolCallId);
+        }
+    }
+
+    private void CancelAllApprovalChecks(string sessionId)
+    {
+        if (!_sessionPendingApprovals.TryGetValue(sessionId, out var set))
+            return;
+        foreach (var id in set.ToArray())
+        {
+            if (_pendingApprovalTimers.Remove(id, out var timer))
+                timer.Dispose();
+        }
+        set.Clear();
     }
 }
