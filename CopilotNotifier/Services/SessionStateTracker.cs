@@ -120,9 +120,9 @@ public class SessionStateTracker
                 if (!_initialScanComplete)
                     continue;
 
-                // Detect ask_user tool as "waiting for input"
+                // Detect tools that block waiting for user response
                 if (evt.Type == "tool.execution_start" &&
-                    evt.Data?.ToolName == "ask_user" &&
+                    evt.Data?.ToolName is "ask_user" or "exit_plan_mode" &&
                     _notifiedEventIds.Add(evt.Id))
                 {
                     // Suppress the turn_end that follows after user answers
