@@ -8,11 +8,12 @@ A Windows system tray application that monitors [GitHub Copilot CLI](https://git
 
 - **🔔 Real-time notifications** — Get notified when a Copilot CLI session:
   - ⏳ Finishes its turn and waits for your input
+  - ⏳ Is waiting for you to approve a tool (powershell, bash, create, edit, write…)
   - ✅ Completes and shuts down
   - 🔔 Finishes a background task
 - **📌 Persistent popups** — Notifications stay in the lower-right corner until you dismiss them
 - **🖱️ Click to focus** — Click a notification to bring the terminal window to the foreground
-- **🧹 Auto-dismiss on focus** — Once a session's terminal is focused (via click or manually), other pending notifications for that session are dismissed
+- **🧹 Smart focus handling** — Switching focus to a session's terminal dismisses other pending popups for that session. If you are already looking at the terminal when an event fires, the popup auto-dismisses after a configurable number of seconds (or can be set to persist).
 - **🌙 Light & dark theme** — Automatically matches your Windows theme setting
 - **⚡ Auto-start** — Optional Windows startup registration
 - **📋 Active sessions list** — Right-click the tray icon to see all running sessions
