@@ -65,8 +65,10 @@ public class NotificationManager
         }
 
         // Dedupe by session so we check each terminal at most once per tick.
+        // Exclude transient (auto-dismiss) popups — they manage their own lifetime
+        // and were intentionally shown while the terminal is focused.
         var bySession = snapshot
-            .Where(p => p.Item.Pid.HasValue)
+            .Where(p => p.Item.Pid.HasValue && !p.HasAutoDismiss)
             .GroupBy(p => p.Item.SessionId);
 
         foreach (var group in bySession)
@@ -88,7 +90,7 @@ public class NotificationManager
             lock (_lock)
             {
                 toClose = _activePopups
-                    .Where(p => p.Item.SessionId == sessionId && p != except)
+                    .Where(p => p.Item.SessionId == sessionId && p != except && !p.HasAutoDismiss)
                     .ToList();
             }
 

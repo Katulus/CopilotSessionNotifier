@@ -16,6 +16,7 @@ public partial class NotificationPopup : Window
     public event Action<NotificationPopup>? BodyClicked;
 
     public NotificationItem Item => _item;
+    public bool HasAutoDismiss => _autoDismissAfter.HasValue;
 
     public NotificationPopup(NotificationItem item, TimeSpan? autoDismissAfter = null)
     {
