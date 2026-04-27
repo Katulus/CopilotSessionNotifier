@@ -16,6 +16,7 @@ public partial class SettingsWindow : Window
 
         ChkWaitingInput.IsChecked = settings.NotifyOnWaitingForInput;
         ChkSessionComplete.IsChecked = settings.NotifyOnSessionComplete;
+        TxtSessionCompleteDismiss.Text = settings.SessionCompleteAutoDismissSeconds.ToString();
         ChkTaskComplete.IsChecked = settings.NotifyOnTaskComplete;
         ChkPlaySound.IsChecked = settings.PlaySound;
         ChkAutoDismissWhenFocused.IsChecked = settings.AutoDismissWhenFocused;
@@ -34,6 +35,8 @@ public partial class SettingsWindow : Window
     {
         _settings.NotifyOnWaitingForInput = ChkWaitingInput.IsChecked == true;
         _settings.NotifyOnSessionComplete = ChkSessionComplete.IsChecked == true;
+        if (int.TryParse(TxtSessionCompleteDismiss.Text, out var scSecs) && scSecs >= 0)
+            _settings.SessionCompleteAutoDismissSeconds = scSecs;
         _settings.NotifyOnTaskComplete = ChkTaskComplete.IsChecked == true;
         _settings.PlaySound = ChkPlaySound.IsChecked == true;
         _settings.AutoDismissWhenFocused = ChkAutoDismissWhenFocused.IsChecked == true;

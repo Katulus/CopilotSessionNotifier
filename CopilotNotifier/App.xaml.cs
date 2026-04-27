@@ -165,6 +165,14 @@ public partial class App : System.Windows.Application
                 autoDismiss = TimeSpan.FromSeconds(_settings.AutoDismissSeconds);
         }
 
+        // Session completed notifications can have their own auto-dismiss timer
+        // independent of focus state (0 = persists).
+        if (item.Type == NotificationType.SessionCompleted &&
+            _settings.SessionCompleteAutoDismissSeconds > 0)
+        {
+            autoDismiss = TimeSpan.FromSeconds(_settings.SessionCompleteAutoDismissSeconds);
+        }
+
         Dispatcher.BeginInvoke(() =>
         {
             _notificationManager?.ShowNotification(item, autoDismiss, shownWhileFocused);

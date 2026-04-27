@@ -10,6 +10,7 @@ public class AppSettings
     public int PollIntervalSeconds { get; set; } = 3;
     public bool NotifyOnWaitingForInput { get; set; } = true;
     public bool NotifyOnSessionComplete { get; set; } = true;
+    public int SessionCompleteAutoDismissSeconds { get; set; } = 4;
     public bool NotifyOnTaskComplete { get; set; } = true;
     public bool AutoDismissWhenFocused { get; set; } = true;
     public int AutoDismissSeconds { get; set; } = 4;
