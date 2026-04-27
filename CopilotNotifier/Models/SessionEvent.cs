@@ -16,7 +16,8 @@ public record SessionEventData(
     string? NewMode = null,
     string? PreviousMode = null,
     SessionResumeContext? Context = null,
-    string? ToolName = null
+    string? ToolName = null,
+    string? ToolCallId = null
 );
 
 public record SessionResumeContext(
